@@ -4928,11 +4928,42 @@ function app() {
       }catch(e){this.showToast(e.message,'error');}
     },
     async openResetModal(user){this.resetTarget=user;this.resetNewPw='';this.resetResult='';this.showResetModal=true;},
-    async resetPassword(){
-      if(!this.resetNewPw||this.resetNewPw.length<6){alert('รหัสผ่านต้องมีอย่างน้อย 6 ตัว');return;}
+    // ── Custom Field Definitions ─────────────────────────────
+    openFieldModal(target, field=null){
+      this.fieldDefTarget=target;
+      if(field){
+        const opts=field.options?JSON.parse(field.options):[];
+        this.fieldDefForm={id:field.id,name:field.name,field_type:field.field_type||'text',is_sensitive:!!field.is_sensitive,optionsText:Array.isArray(opts)?opts.join('\n'):''};
+      } else {
+        this.fieldDefForm={id:null,name:'',field_type:'text',is_sensitive:false,optionsText:''};
+      }
+      this.showFieldDefModal=true;
+    },
+    async saveFieldDef(){
+      if(!this.fieldDefForm.name){this.showToast('กรุณาระบุชื่อ Field','error');return;}
+      const options=this.fieldDefForm.field_type==='select'?(this.fieldDefForm.optionsText||'').split('\n').map(s=>s.trim()).filter(Boolean):[];
+      const body={name:this.fieldDefForm.name,field_type:this.fieldDefForm.field_type,is_sensitive:!!this.fieldDefForm.is_sensitive,options};
+      const base=this.fieldDefTarget==='employee'?'/api/v1/employee-fields':'/api/v1/project-fields';
       try{
-        await this.api('POST',`/api/v1/users/${this.resetTarget.id}/reset-password`,{new_password:this.resetNewPw});
-        this.resetResult='รีเซ็ตสำเร็จ'; this.showToast('รีเซ็ตรหัสผ่านสำเร็จ');
+        if(this.fieldDefForm.id){
+          await this.api('PUT',`${base}/definitions/${this.fieldDefForm.id}`,body);
+        } else {
+          await this.api('POST',`${base}/definitions`,body);
+        }
+        this.showFieldDefModal=false;
+        const [ed,pd]=await Promise.all([this.api('GET','/api/v1/employee-fields/definitions'),this.api('GET','/api/v1/project-fields/definitions')]);
+        this.empFieldDefs=ed||[]; this.projFieldDefs=pd||[];
+        this.showToast(this.fieldDefForm.id?'แก้ไข Field สำเร็จ':'เพิ่ม Field สำเร็จ');
+      }catch(e){this.showToast(e.message,'error');}
+    },
+    async deleteFieldDef(target, field){
+      if(!confirm(`ลบ Field "${field.name}" ?`)) return;
+      const base=target==='employee'?'/api/v1/employee-fields':'/api/v1/project-fields';
+      try{
+        await this.api('DELETE',`${base}/definitions/${field.id}`);
+        const [ed,pd]=await Promise.all([this.api('GET','/api/v1/employee-fields/definitions'),this.api('GET','/api/v1/project-fields/definitions')]);
+        this.empFieldDefs=ed||[]; this.projFieldDefs=pd||[];
+        this.showToast('ลบ Field สำเร็จ');
       }catch(e){this.showToast(e.message,'error');}
     },
     async createAdminUser(){
@@ -5655,4 +5686,31 @@ function app() {
               <div class="text-xs opacity-50 mt-0.5 flex items-center justify-end gap-1">
                 <span x-text="m.time||''"></span>
                 <span x-show="m.sender===currentUser?.username" :title="m.is_read?'อ่านแล้ว':'ส่งแล้ว'"
-                  :class="m.is_read?'text-blue-300'
+                  :class="m.is_read?'text-blue-300':'text-slate-300'" x-text="m.is_read?'✓✓':'✓'"></span>
+              </div>
+            </div>
+          </div>
+        </template>
+        <div x-show="chatMessages.length===0" class="text-center text-slate-400 text-sm py-8">ยังไม่มีข้อความ</div>
+      </div>
+      <div class="p-3 border-t border-slate-100 flex gap-2 flex-shrink-0">
+        <input x-model="chatInput" @keydown.enter="sendChat()" type="text" placeholder="พิมพ์ข้อความ..."
+          class="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-400">
+        <button @click="sendChat()"
+          class="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium">➤</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- FAB Toggle Button -->
+  <button @click="toggleChat()"
+    class="w-14 h-14 bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white rounded-full shadow-xl flex items-center justify-center relative transition-transform">
+    <span class="text-xl" x-text="showChat?'✕':'💬'"></span>
+    <span x-show="!showChat&&chatUnread>0"
+      class="absolute -top-1 -right-1 bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center font-bold"
+      x-text="chatUnread"></span>
+  </button>
+</div>
+
+</body>
+</html>
