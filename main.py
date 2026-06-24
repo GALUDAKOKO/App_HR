@@ -110,6 +110,19 @@ async def serve_spa():
 
 
 @app.on_event("startup")
+def auto_seed():
+    """Seed demo data ถ้า DB ว่าง (ไม่มี admin) — รัน safe ทุก startup"""
+    from seed import run_seed
+    db: Session = SessionLocal()
+    try:
+        run_seed(db)
+    except Exception as e:
+        print(f"[SEED] warning: {e}")
+    finally:
+        db.close()
+
+
+@app.on_event("startup")
 def sync_sup_team_members():
     """Repair SupTeamMember ให้ตรงกับ active Assignment — รัน safe ทุก startup"""
     db: Session = SessionLocal()
@@ -175,7 +188,6 @@ def seed_admin():
             db.commit()
             print("\n" + "="*50)
             print("  HEAD OFFICE ZL -- HR SYSTEM")
-            print("="*50)
             print(f"  Admin created | user: admin | pass: {admin_password}")
             print(f"  URL: http://localhost:8000")
             print("="*50 + "\n")
@@ -187,6 +199,4 @@ def seed_admin():
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    is_render = bool(os.environ.get("RENDER"))
-    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=not is_render)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
