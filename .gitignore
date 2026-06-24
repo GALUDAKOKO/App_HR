@@ -1,0 +1,36 @@
+# === SECRETS — ห้าม commit เด็ดขาด ===
+.env
+.env.*
+*.env
+
+# === Database (local only) ===
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+*.sql
+
+# === Python ===
+__pycache__/
+*.pyc
+*.pyo
+.eggs/
+dist/
+build/
+
+# === Uploads ===
+uploads/
+
+# === Local dev only ===
+backups/
+start.bat
+start_hr.bat
+seed_mock.py
+backup.py
+_trash/
+
+# === OS / IDE ===
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
