@@ -7,11 +7,12 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Optional
-import io, pandas as pd
+import io
 from collections import defaultdict
 
 from database import get_db
 import models
+from .excel_utils import write_excel_multi
 from auth import get_current_user, require_admin_or_sup
 
 router = APIRouter(prefix="/api/v1/report", tags=["report"])
@@ -281,9 +282,8 @@ def export_leave_ot_summary(
             })
 
     buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        pd.DataFrame(summary_rows).to_excel(writer, index=False, sheet_name="สรุปรวม")
-        pd.DataFrame(leave_rows if leave_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]).to_excel(
-            writer, index=False, sheet_name="รายละเอียดการลา")
-        pd.DataFrame(ot_rows if ot_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]).to_excel(
-            writer, index=False, sheet_name="รายละเอียด OT")
+    write_excel_multi(buf, [
+        ("สรุปรวม", summary_rows),
+        ("รายละเอียดการลา", leave_rows if leave_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]),
+        ("รายละเอียด OT", ot_rows if ot_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]),
+    ])

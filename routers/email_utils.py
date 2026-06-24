@@ -112,7 +112,6 @@ def send_reset_email(db: Session, to_email: str, username: str,
                      reset_url: str, company_name: str = "Head Office ZL") -> dict:
     html = f"""
 <div style="font-family:sans-serif;max-width:520px;margin:auto;background:#f8fafc;padding:32px;border-radius:16px">
-  <div style="background:#4F46E5;border-radius:12px;padding:24px;text-align:center;margin-bottom:24px">
     <h1 style="color:#fff;margin:0;font-size:22px">🏢 {company_name}</h1>
   </div>
   <h2 style="color:#1e293b">รีเซ็ตรหัสผ่าน</h2>

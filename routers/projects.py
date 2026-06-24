@@ -4,12 +4,12 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
 import os, uuid, io, json
-import pandas as pd
 from PIL import Image
 
 from database import get_db
 import models, schemas
 from auth import get_current_user, require_admin, require_admin_or_sup, log_action
+from .excel_utils import notna, write_excel, read_excel
 
 router = APIRouter(prefix="/api/v1/projects", tags=["projects"])
 
@@ -306,12 +306,8 @@ def export_projects(db: Session = Depends(get_db),
                 row_data[fd.name] = field_val_map.get(fd.id, "")
         data.append(row_data)
 
-    df = pd.DataFrame(data) if data else pd.DataFrame(
-        columns=["project_name", "sup_name", "latitude", "longitude", "radius_km", "status"]
-    )
     buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="Projects")
+    write_excel(buf, data, sheet_name="Projects")
     buf.seek(0)
     return StreamingResponse(
         buf,
@@ -328,17 +324,16 @@ def import_projects(
 ):
     try:
         contents = file.file.read()
-        df = pd.read_excel(io.BytesIO(contents))
+        rows = read_excel(contents)
     except Exception:
         raise HTTPException(status_code=400, detail="cannot read excel file")
 
-    df.columns = [str(c).strip() for c in df.columns]
-
     name_col = None
-    for c in ["project_name", "name"]:
-        if c in df.columns:
-            name_col = c
-            break
+    if rows:
+        for c in ["project_name", "name"]:
+            if c in rows[0]:
+                name_col = c
+                break
     if name_col is None:
         raise HTTPException(status_code=400, detail="column 'project_name' not found")
 
@@ -352,7 +347,7 @@ def import_projects(
         db.rollback()
 
     created, updated, errors = 0, 0, []
-    for idx, row in df.iterrows():
+    for row in rows:
         name = str(row.get(name_col, "")).strip()
         if not name or name == "nan":
             continue
@@ -361,15 +356,15 @@ def import_projects(
         try:
             def safe(col, default=""):
                 val = row.get(col)
-                return str(val).strip() if pd.notna(val) else default
+                return str(val).strip() if notna(val) else default
 
             sup_name = safe("sup_name") or None
             lat_raw = row.get("latitude") or row.get("lat") or row.get("Latitude")
             lng_raw = row.get("longitude") or row.get("lng") or row.get("Longitude")
-            lat = float(lat_raw) if pd.notna(lat_raw) and str(lat_raw).strip() not in ("", "nan") else None
-            lng = float(lng_raw) if pd.notna(lng_raw) and str(lng_raw).strip() not in ("", "nan") else None
+            lat = float(lat_raw) if notna(lat_raw) and str(lat_raw).strip() not in ("", "nan") else None
+            lng = float(lng_raw) if notna(lng_raw) and str(lng_raw).strip() not in ("", "nan") else None
             radius_raw = row.get("radius_km") or row.get("geofence_radius_km")
-            radius = float(radius_raw) if pd.notna(radius_raw) and str(radius_raw).strip() not in ("", "nan") else 3.0
+            radius = float(radius_raw) if notna(radius_raw) and str(radius_raw).strip() not in ("", "nan") else 3.0
             status_raw = safe("status")
             is_active = status_raw != "inactive"
 
@@ -400,11 +395,11 @@ def import_projects(
                 db.flush()
                 created += 1
 
-            for col_name in df.columns:
+            for col_name in (rows[0] if rows else {}):
                 if col_name in field_name_map:
                     fd = field_name_map[col_name]
                     val = row.get(col_name)
-                    if pd.notna(val):
+                    if notna(val):
                         str_val = str(val).strip()
                         fv = db.query(models.ProjectFieldValue).filter(
                             models.ProjectFieldValue.project_id == proj.id,

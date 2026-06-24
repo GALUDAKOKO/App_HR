@@ -3,10 +3,10 @@ from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
 import io, secrets
-import pandas as pd
 
 from database import get_db
 import models, schemas
+from .excel_utils import read_excel
 from auth import get_current_user, require_admin, hash_password, log_action
 
 router = APIRouter(prefix="/api/v1/users", tags=["users"])
@@ -155,19 +155,17 @@ def import_users(file: UploadFile = File(...),
     """
     try:
         contents = file.file.read()
-        df = pd.read_excel(io.BytesIO(contents))
+        rows = read_excel(contents)
     except Exception:
         raise HTTPException(status_code=400, detail="ไม่สามารถอ่านไฟล์ Excel ได้")
 
-    df.columns = [str(c).strip() for c in df.columns]
-
-    if "username" not in df.columns and "ชื่อผู้ใช้" not in df.columns:
+    if not rows or ("username" not in rows[0] and "ชื่อผู้ใช้" not in rows[0]):
         raise HTTPException(status_code=400, detail="ไม่พบคอลัมน์ 'username' หรือ 'ชื่อผู้ใช้' ในไฟล์")
 
     valid_roles = {"admin", "sup", "employee"}
     created, updated, errors = 0, 0, []
 
-    for idx, row in df.iterrows():
+    for row in rows:
         username = str(row.get("username") or row.get("ชื่อผู้ใช้") or "").strip()
         if not username or username == "nan":
             continue

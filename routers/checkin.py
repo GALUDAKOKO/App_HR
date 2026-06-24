@@ -10,7 +10,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, date, timezone, timedelta
-import math, io, pandas as pd
+import math, io
 
 TZ_TH = timezone(timedelta(hours=7))
 
@@ -307,10 +307,8 @@ def export_checkin(db: Session = Depends(get_db),
             "Out Geofence": "✓" if r.check_out_ok else ("✗" if r.check_out_ok is False else "—"),
             "ชั่วโมงทำงาน": _work_hours(r) or "",
         })
-    df = pd.DataFrame(data) if data else pd.DataFrame()
     buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        df.to_excel(w, index=False, sheet_name="Check-in")
+    write_excel(buf, data, sheet_name="Check-in")
     buf.seek(0)
     return StreamingResponse(buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

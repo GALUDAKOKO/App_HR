@@ -10,11 +10,11 @@ from sqlalchemy.orm import Session
 from typing import Optional
 import io, calendar
 from collections import defaultdict
-import pandas as pd
 from datetime import datetime
 
 from database import get_db
 import models
+from .excel_utils import write_excel_multi
 from auth import get_current_user, require_admin_or_sup
 
 router = APIRouter(prefix="/api/v1/payroll", tags=["payroll"])
@@ -341,15 +341,12 @@ def payroll_export(
 
     # ── Write Excel ───────────────────────────────────────
     buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        pd.DataFrame(summary_rows if summary_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]).to_excel(
-            writer, index=False, sheet_name="สรุปค่าจ้าง")
-        pd.DataFrame(ci_rows if ci_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]).to_excel(
-            writer, index=False, sheet_name="Check-in")
-        pd.DataFrame(lv_rows if lv_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]).to_excel(
-            writer, index=False, sheet_name="การลา")
-        pd.DataFrame(ot_rows if ot_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]).to_excel(
-            writer, index=False, sheet_name="OT")
+    write_excel_multi(buf, [
+        ("สรุปค่าจ้าง", summary_rows if summary_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]),
+        ("Check-in", ci_rows if ci_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]),
+        ("การลา", lv_rows if lv_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]),
+        ("OT", ot_rows if ot_rows else [{"หมายเหตุ": "ไม่มีข้อมูล"}]),
+    ])
 
     buf.seek(0)
     filename = f"payroll_{month_label}.xlsx"

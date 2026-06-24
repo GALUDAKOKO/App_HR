@@ -9,10 +9,11 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
-import json, io, pandas as pd
+import json, io
 
 from database import get_db
 import models
+from .excel_utils import write_excel
 from auth import get_current_user, require_admin, log_action
 
 router = APIRouter(prefix="/api/v1/elearning", tags=["elearning"])
@@ -315,6 +316,7 @@ def list_logs(
 
 # ── Export Excel (Admin) ────────────────────────
 
+
 @router.get("/logs/export")
 def export_logs(
     db: Session = Depends(get_db),
@@ -334,17 +336,13 @@ def export_logs(
             "เรียนจบ": "✓" if r.completed else "",
             "จบเมื่อ": r.completed_at.strftime("%Y-%m-%d %H:%M") if r.completed_at else "",
         })
-    df = pd.DataFrame(data) if data else pd.DataFrame()
     buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as w:
-        df.to_excel(w, index=False, sheet_name="Elearning Log")
+    write_excel(buf, data, sheet_name="Elearning Log")
     buf.seek(0)
     return StreamingResponse(buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=elearning_logs.xlsx"})
 
-
-# ── Completion stats per course (Admin/SUP) ─────
 
 @router.get("/stats")
 def course_stats(
@@ -354,4 +352,34 @@ def course_stats(
     if current_user.role not in ("admin", "sup"):
         raise HTTPException(403, "Admin/SUP only")
     from sqlalchemy import func
+
     courses = db.query(models.ElearningContent).filter(
+        models.ElearningContent.is_active == True
+    ).all()
+
+    result = []
+    for c in courses:
+        total_views = db.query(func.count(models.ElearningLog.id)).filter(
+            models.ElearningLog.content_id == c.id
+        ).scalar() or 0
+
+        total_completed = db.query(func.count(models.ElearningLog.id)).filter(
+            models.ElearningLog.content_id == c.id,
+            models.ElearningLog.completed == True
+        ).scalar() or 0
+
+        unique_viewers = db.query(func.count(func.distinct(models.ElearningLog.user_id))).filter(
+            models.ElearningLog.content_id == c.id
+        ).scalar() or 0
+
+        result.append({
+            "id": c.id,
+            "title": c.title,
+            "category": c.category,
+            "content_type": c.content_type,
+            "total_views": total_views,
+            "unique_viewers": unique_viewers,
+            "total_completed": total_completed,
+        })
+
+    return result

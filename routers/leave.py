@@ -9,11 +9,12 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime
-import io, pandas as pd
+import io
 
 from database import get_db
 import models
 from routers.holiday import _is_holiday
+from .excel_utils import write_excel
 from auth import get_current_user, require_admin, require_admin_or_sup, log_action
 
 router = APIRouter(prefix="/api/v1/leave", tags=["leave"])
@@ -233,10 +234,8 @@ def export_leave(
             "วันที่อนุมัติ": r.approved_at.strftime("%Y-%m-%d") if r.approved_at else "",
             "หมายเหตุ Admin": r.admin_note or "",
         })
-    df = pd.DataFrame(rows) if rows else pd.DataFrame(columns=["รหัสพนักงาน", "ชื่อ-นามสกุล"])
     buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="ใบลา")
+    write_excel(buf, rows, sheet_name="ใบลา")
     buf.seek(0)
     return StreamingResponse(buf,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

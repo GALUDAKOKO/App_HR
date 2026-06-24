@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
-import json, io, os, uuid, pandas as pd
+import json, io, os, uuid
 from datetime import datetime
 from PIL import Image
 
 from database import get_db
 import models, schemas
 from auth import get_current_user, require_admin, require_admin_or_sup, log_action
+from .excel_utils import notna, write_excel, read_excel
 
 router = APIRouter(prefix="/api/v1/employees", tags=["employees"])
 
@@ -218,12 +219,8 @@ def export_employees(db: Session = Depends(get_db),
 
         data.append(row_data)
 
-    df = pd.DataFrame(data) if data else pd.DataFrame(
-        columns=["รหัสพนักงาน", "ชื่อ", "นามสกุล", "อายุ", "แผนก", "ประเภท", "โครงการปัจจุบัน"]
-    )
     buf = io.BytesIO()
-    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False, sheet_name="พนักงาน")
+    write_excel(buf, data, sheet_name="พนักงาน")
     buf.seek(0)
     return StreamingResponse(
         buf,
@@ -284,13 +281,11 @@ def import_employees(file: UploadFile = File(...),
     """
     try:
         contents = file.file.read()
-        df = pd.read_excel(io.BytesIO(contents))
+        rows = read_excel(contents)
     except Exception:
         raise HTTPException(status_code=400, detail="ไม่สามารถอ่านไฟล์ Excel ได้")
 
-    df.columns = [str(c).strip() for c in df.columns]
-
-    if "รหัสพนักงาน" not in df.columns:
+    if not rows or "รหัสพนักงาน" not in rows[0]:
         raise HTTPException(status_code=400, detail="ไม่พบคอลัมน์ 'รหัสพนักงาน' ในไฟล์")
 
     # โหลด custom field definitions (ถ้ายังไม่มีตาราง → ข้ามไม่ error)
@@ -304,7 +299,7 @@ def import_employees(file: UploadFile = File(...),
         db.rollback()  # reset session ถ้า table ยังไม่มี
 
     created, updated, errors = 0, 0, []
-    for idx, row in df.iterrows():
+    for row in rows:
         code = str(row.get("รหัสพนักงาน", "")).strip()
         if not code or code == "nan":
             continue
@@ -313,14 +308,14 @@ def import_employees(file: UploadFile = File(...),
         try:
             def safe(col, default=""):
                 val = row.get(col)
-                return str(val).strip() if pd.notna(val) else default
+                return str(val).strip() if notna(val) else default
 
             first_name = safe("ชื่อ") or safe("first_name")
             last_name = safe("นามสกุล") or safe("last_name")
             department = safe("แผนก") or safe("department") or None
             employee_type = safe("ประเภท") or safe("employee_type") or "รายวัน"
             age_raw = row.get("อายุ") or row.get("age")
-            age = int(float(str(age_raw))) if pd.notna(age_raw) and str(age_raw).strip() not in ("", "nan") else None
+            age = int(float(str(age_raw))) if notna(age_raw) and str(age_raw).strip() not in ("", "nan") else None
 
             existing = db.query(models.Employee).filter(
                 models.Employee.employee_code == code
@@ -351,9 +346,9 @@ def import_employees(file: UploadFile = File(...),
 
             # Custom fields
             for col_name, fd in field_name_map.items():
-                if col_name in df.columns:
+                if col_name in rows[0]:
                     val = row.get(col_name)
-                    if pd.notna(val):
+                    if notna(val):
                         str_val = str(val).strip()
                         fv = db.query(models.EmployeeFieldValue).filter(
                             models.EmployeeFieldValue.employee_id == emp.id,
